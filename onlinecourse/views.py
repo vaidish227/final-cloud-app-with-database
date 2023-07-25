@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from django.http import HttpResponseRedirect
 # <HINT> Import any new Models here
-from .models import Course, Enrollment
+from .models import Course, Enrollment, Question, Choice, Submission
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404, render, redirect
 from django.urls import reverse
@@ -112,8 +112,18 @@ def enroll(request, course_id):
          # Redirect to show_exam_result with the submission id
 #def submit(request, course_id):
 
+def submit(request, course_id):
+    course = get_object_or_404(Course, pk=course_id)
+    user = request.user
+    enrollment = Enrollment.objects.get(user=user, course=course)
+    submission = Submission.objects.create(enrollment_id=enrollment)
+    choices = extract_answers(request)
+    submission.choices.set(choices)
+    submission_id = submission.id
+    return HttpResponseRedirect(reverse(viewname='onlinecourse:show_exam_result', args=(course_id, submission_id,)))
 
 # <HINT> A example method to collect the selected choices from the exam form from the request object
+# following is the original one
 #def extract_answers(request):
 #    submitted_anwsers = []
 #    for key in request.POST:
@@ -123,6 +133,14 @@ def enroll(request, course_id):
 #            submitted_anwsers.append(choice_id)
 #    return submitted_anwsers
 
+def extract_answers(request):
+    submitted_answers = []
+    for key in request.POST:
+        if key.startswith('choice'):
+            #value = request.POST[key]
+            choice_id = request.POST[key]
+            submitted_answers.append(Choice.objects.get(id=choice_id))
+    return submitted_answers
 
 # <HINT> Create an exam result view to check if learner passed exam and show their question results and result for each question,
 # you may implement it based on the following logic:
@@ -132,5 +150,22 @@ def enroll(request, course_id):
         # Calculate the total score
 #def show_exam_result(request, course_id, submission_id):
 
+def show_exam_result(request, course_id, submission_id):
+    context = {}
+    course = get_object_or_404(Course, pk=course_id)
+    submission = Submission.objects.get(id=submission_id)
+    choices = submission.choices.all()
 
+    total_questions = course.question_set.count()
+    total_correct = 0
+    for question in course.question_set.all():
+        user_choice = choices.filter(question_id=question).first()
+        if user_choice and user_choice.is_correct:
+            total_correct += 1
 
+    grade = (total_correct / total_questions) * 100
+    context['course'] = course
+    context['grade'] = grade
+    context['choices'] = choices
+
+    return render(request, 'onlinecourse/exam_result_bootstrap.html', context)
